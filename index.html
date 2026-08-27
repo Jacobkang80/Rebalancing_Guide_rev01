@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>스마트 고점 신호 & 리밸런싱</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen p-4 font-sans">
+    <div class="max-w-md mx-auto space-y-5">
+        
+        <!-- 헤더 및 고속 전체 갱신 -->
+        <header class="border-b border-slate-700 pb-3 flex justify-between items-center">
+            <div>
+                <h1 class="text-xl font-bold text-white">스마트 리밸런싱</h1>
+                <p class="text-slate-400 text-xs mt-1">지수/종목 BB(1.5σ) & VIX 고점 포착</p>
+            </div>
+            <button id="refreshBtn" onclick="fetchAllData()" class="bg-indigo-600 hover:bg-indigo-500 text-xs px-3 py-2 rounded-lg text-white font-semibold flex items-center gap-1 shadow-lg transition">
+                <span>⚡</span> 전체 고속 갱신
+            </button>
+        </header>
+
+        <!-- 진단 및 추천 요약 -->
+        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-3">
+            <div class="flex justify-between items-center">
+                <span class="text-xs text-slate-400">VIX 지수 (변동성)</span>
+                <span id="vixVal" class="text-xl font-bold font-mono text-amber-400">---</span>
+            </div>
+            <div id="riskBadge" class="p-3 rounded-lg text-center font-bold text-sm bg-slate-700 text-slate-300">
+                '전체 고속 갱신' 버튼을 눌러주세요
+            </div>
+            <p id="riskGuide" class="text-xs text-slate-400 leading-relaxed"></p>
+        </div>
+
+        <!-- 3대 지수 BB (1.5σ) & 현재 지수 매트릭스 -->
+        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-2 text-xs">
+            <div class="flex justify-between items-center border-b border-slate-700 pb-2">
+                <span class="font-bold text-slate-200">3대 지수 BB (1.5σ) 상단 돌파</span>
+                <span id="breachSummary" class="text-indigo-400 font-bold">0 / 9 감지</span>
+            </div>
+            <table class="w-full text-center">
+                <thead class="text-slate-400 border-b border-slate-700/50">
+                    <tr>
+                        <th class="py-1 text-left">지수 (현재가)</th>
+                        <th class="py-1">일봉</th>
+                        <th class="py-1">주봉</th>
+                        <th class="py-1">월봉</th>
+                    </tr>
+                </thead>
+                <tbody id="bbMatrix" class="divide-y divide-slate-700/40">
+                    <tr>
+                        <td class="py-2 text-left">
+                            <div class="font-semibold text-slate-200">코스피</div>
+                            <div id="price_ks" class="text-[10px] font-mono text-indigo-300">---</div>
+                        </td>
+                        <td id="m_ks_d">-</td><td id="m_ks_w">-</td><td id="m_ks_m">-</td>
+                    </tr>
+                    <tr>
+                        <td class="py-2 text-left">
+                            <div class="font-semibold text-slate-200">S&P 500</div>
+                            <div id="price_sp" class="text-[10px] font-mono text-indigo-300">---</div>
+                        </td>
+                        <td id="m_sp_d">-</td><td id="m_sp_w">-</td><td id="m_sp_m">-</td>
+                    </tr>
+                    <tr>
+                        <td class="py-2 text-left">
+                            <div class="font-semibold text-slate-200">나스닥</div>
+                            <div id="price_nas" class="text-[10px] font-mono text-indigo-300">---</div>
+                        </td>
+                        <td id="m_nas_d">-</td><td id="m_nas_w">-</td><td id="m_nas_m">-</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 관심 종목 맞춤 지정 및 BB(1.5σ) 체크 -->
+        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-3 text-xs">
+            <div class="flex justify-between items-center border-b border-slate-700 pb-2">
+                <span class="font-bold text-slate-200">관심 종목 BB(1.5σ) 상단 터치 진단</span>
+                <span class="text-[10px] text-slate-400">야후 티커 기준</span>
+            </div>
+            
+            <!-- 종목 추가 입력폼 -->
+            <div class="flex gap-2">
+                <input type="text" id="newTickerInput" placeholder="티커 (예: NVDA, AAPL, 005930.KS)" class="flex-1 bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-slate-200 uppercase placeholder:normal-case placeholder:text-slate-600 focus:outline-none focus:border-indigo-500">
+                <button onclick="addStock()" class="bg-slate-700 hover:bg-slate-600 text-indigo-300 font-bold px-3 py-1.5 rounded transition">
+                    + 추가
+                </button>
+            </div>
+
+            <!-- 종목 진단 리스트 테이블 -->
+            <table class="w-full text-center">
+                <thead class="text-slate-400 border-b border-slate-700/50">
+                    <tr>
+                        <th class="py-1 text-left">종목</th>
+                        <th class="py-1 text-right">현재가</th>
+                        <th class="py-1">일봉 BB</th>
+                        <th class="py-1">주봉 BB</th>
+                        <th class="py-1 text-right">삭제</th>
+                    </tr>
+                </thead>
+                <tbody id="customStockList" class="divide-y divide-slate-700/40">
+                    <tr><td colspan="5" class="py-3 text-slate-500">등록된 관심 종목이 없습니다.</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 포트폴리오 비교 원형그래프 (현재 비중 ➔ 리밸런싱 비중) -->
+        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-3">
+            <div class="flex justify-between items-center border-b border-slate-700 pb-2">
+                <span class="text-xs font-bold text-slate-200">📊 포트폴리오 리밸런싱 시뮬레이션</span>
+                <span class="text-[10px] text-slate-400">현재 vs 목표</span>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-2 text-center items-center relative">
+                <!-- 현재 비중 차트 -->
+                <div class="space-y-1">
+                    <p class="text-[11px] text-slate-400 font-semibold">현재 비중</p>
+                    <div class="h-36 w-full relative"><canvas id="currentChart"></canvas></div>
+                </div>
+                
+                <!-- 목표/추천 비중 차트 -->
+                <div class="space-y-1">
+                    <p class="text-[11px] text-indigo-300 font-semibold">목표 (추천) 비중</p>
+                    <div class="h-36 w-full relative"><canvas id="targetChart"></canvas></div>
+                </div>
+            </div>
+
+            <!-- 중앙 리밸런싱 안내 화살표 바 -->
+            <div class="bg-slate-900/80 p-2 rounded-lg flex justify-center items-center gap-2 text-indigo-400 text-xs font-bold border border-slate-700/60">
+                <span>현재 자산 구조</span>
+                <span class="text-indigo-300 text-sm animate-pulse">➔</span>
+                <span class="text-emerald-400">스마트 리밸런싱 적용</span>
+            </div>
+        </div>
+
+        <!-- 자산 입력 및 리밸런싱 조정 테이블 -->
+        <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden text-xs">
+            <div class="p-3 border-b border-slate-700 flex justify-between items-center">
+                <span class="font-bold text-slate-300">총 평가 자산</span>
+                <input type="number" id="totalAmount" value="100000000" oninput="calculate()" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-right font-mono text-indigo-300 w-32">
+            </div>
+            <table class="w-full text-left">
+                <thead class="bg-slate-900 text-slate-400 border-b border-slate-700">
+                    <tr>
+                        <th class="p-3">자산군</th>
+                        <th class="p-3 text-center">현재%</th>
+                        <th class="p-3 text-center">목표%</th>
+                        <th class="p-3 text-right">조정금액</th>
+                    </tr>
+                </thead>
+                <tbody id="assetRows" class="divide-y divide-slate-700"></tbody>
+            </table>
+        </div>
+
+    </div>
+
+    <script>
+        const assets = [
+            { name: '국내주식', current: 35, target: 30, color: '#3B82F6', type: 'stock' },
+            { name: '해외주식', current: 45, target: 40, color: '#10B981', type: 'stock' },
+            { name: '금 (Gold)', current: 10, target: 15, color: '#F59E0B', type: 'safe' },
+            { name: '달러/현금', current: 10, target: 15, color: '#6366F1', type: 'safe' }
+        ];
+
+        let customTickers = JSON.parse(localStorage.getItem('my_custom_tickers')) || ['NVDA', 'AAPL', '005930.KS'];
+
+        let vixValue = 14.0;
+        let breachCount = 0;
+        let currentChart = null;
+        let targetChart = null;
+
+        // 원그래프 내부 수치 레이블 플러그인
+        const doughnutLabelsPlugin = {
+            id: 'doughnutLabelsPlugin',
+            afterDraw(chart) {
+                const { ctx, data } = chart;
+                const total = data.datasets[0].data.reduce((a, b) => a + b, 0);
+                chart.getDatasetMeta(0).data.forEach((datapoint, index) => {
+                    const val = data.datasets[0].data[index];
+                    if (!val || val <= 0) return;
+                    const pct = Math.round((val / total) * 100);
+                    if (pct < 4) return;
+
+                    const { x, y } = datapoint.tooltipPosition();
+                    ctx.save();
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = 'bold 10px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.shadowColor = 'rgba(0,0,0,0.8)';
+                    ctx.shadowBlur = 4;
+                    ctx.fillText(pct + '%', x, y);
+                    ctx.restore();
+                });
+            }
+        };
+
+        function initCharts() {
+            const chartConfig = (dataValues) => ({
+                type: 'doughnut',
+                data: {
+                    labels: assets.map(a => a.name),
+                    datasets: [{ data: dataValues, backgroundColor: assets.map(a => a.color), borderWidth: 0 }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    cutout: '55%'
+                },
+                plugins: [doughnutLabelsPlugin]
+            });
+
+            currentChart = new Chart(document.getElementById('currentChart').getContext('2d'), chartConfig(assets.map(a => a.current)));
+            targetChart = new Chart(document.getElementById('targetChart').getContext('2d'), chartConfig(assets.map(a => a.target)));
+        }
+
+        // 안정적인 야후 파이낸스 우회 수신 함수
+        async function fetchYahooData(ticker) {
+            const encodedTicker = encodeURIComponent(ticker);
+            const targets = [
+                `https://query2.finance.yahoo.com/v8/finance/chart/${encodedTicker}?interval=1d&range=1y`,
+                `https://query1.finance.yahoo.com/v8/finance/chart/${encodedTicker}?interval=1d&range=1y`
+            ];
+
+            for (let yahooUrl of targets) {
+                // 1차 시도: AllOrigins JSONP 우회
+                try {
+                    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(yahooUrl)}`;
+                    const res = await fetch(proxyUrl);
+                    if (res.ok) {
+                        const json = await res.json();
+                        if (json && json.contents) {
+                            const parsed = JSON.parse(json.contents);
+                            const result = parsed?.chart?.result?.[0];
+                            if (result) return parseYahooResult(result);
+                        }
+                    }
+                } catch (e) {}
+
+                // 2차 시도: Corsproxy.io 우회
+                try {
+                    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`;
+                    const res = await fetch(proxyUrl);
+                    if (res.ok) {
+                        const parsed = await res.json();
+                        const result = parsed?.chart?.result?.[0];
+                        if (result) return parseYahooResult(result);
+                    }
+                } catch (e) {}
+            }
+            return null;
+        }
+
+        function parseYahooResult(result) {
+            const rawCloses = result.indicators?.quote?.[0]?.close || [];
+            const closes = rawCloses.filter(c => c !== null && c !== undefined && !isNaN(c));
+            const metaPrice = result.meta?.regularMarketPrice;
+            const price = metaPrice || (closes.length > 0 ? closes[closes.length - 1] : 0);
+            return { price, closes };
+        }
+
+        function getBBStates(closes) {
+            if (!closes || closes.length < 20) return { d: null, w: null, m: null };
+
+            const checkBreach = (arr) => {
+                if (arr.length < 15) return false;
+                const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+                const variance = arr.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / arr.length;
+                const stdDev = Math.sqrt(variance);
+                const upper = mean + (1.5 * stdDev);
+                return arr[arr.length - 1] >= upper;
+            };
+
+            const dBreach = checkBreach(closes.slice(-20));
+
+            const wCloses = [];
+            for (let i = closes.length - 1; i >= 0 && wCloses.length < 20; i -= 5) wCloses.unshift(closes[i]);
+            const wBreach = checkBreach(wCloses);
+
+            const mCloses = [];
+            for (let i = closes.length - 1; i >= 0 && mCloses.length < 20; i -= 21) mCloses.unshift(closes[i]);
+            const mBreach = checkBreach(mCloses);
+
+            return { d: dBreach, w: wBreach, m: mBreach };
+        }
+
+        function formatPrice(ticker, price) {
+            if (!price) return '---';
+            if (ticker.endsWith('.KS') || ticker.endsWith('.KQ')) {
+                return Math.round(price).toLocaleString('ko-KR') + '원';
+            } else if (ticker.startsWith('^')) {
+                return price.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            } else {
+                return '$' + price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            }
+        }
+
+        function renderBBBadge(isBreach) {
+            if (isBreach === null) return `<span class="text-slate-600">⚠️ 미수신</span>`;
+            return isBreach 
+                ? `<span class="text-rose-400 font-bold">🔴 상단돌파</span>` 
+                : `<span class="text-emerald-400 font-bold">🟢 정상</span>`;
+        }
+
+        async function fetchAllData() {
+            const btn = document.getElementById('refreshBtn');
+            btn.innerHTML = `<span>⚡</span> 고속 수신 중...`;
+            btn.disabled = true;
+
+            breachCount = 0;
+
+            const allTickers = ['^VIX', '^KS11', '^GSPC', '^IXIC', ...customTickers];
+            const promises = allTickers.map(t => fetchYahooData(t));
+            const results = await Promise.all(promises);
+
+            const dataMap = {};
+            allTickers.forEach((t, i) => { dataMap[t] = results[i]; });
+
+            // 1. VIX 수신
+            if (dataMap['^VIX'] && dataMap['^VIX'].price) {
+                vixValue = dataMap['^VIX'].price;
+                document.getElementById('vixVal').textContent = vixValue.toFixed(2);
+            }
+
+            // 2. 3대 지수 처리
+            const indices = [
+                { key: 'ks', symbol: '^KS11', priceEl: 'price_ks' },
+                { key: 'sp', symbol: '^GSPC', priceEl: 'price_sp' },
+                { key: 'nas', symbol: '^IXIC', priceEl: 'price_nas' }
+            ];
+
+            indices.forEach(idx => {
+                const data = dataMap[idx.symbol];
+                if (data && data.price) {
+                    document.getElementById(idx.priceEl).textContent = formatPrice(idx.symbol, data.price);
+                    const bb = getBBStates(data.closes);
+                    
+                    ['d', 'w', 'm'].forEach(tf => {
+                        const isB = bb[tf];
+                        if (isB === true) breachCount++;
+                        document.getElementById(`m_${idx.key}_${tf}`).innerHTML = renderBBBadge(isB);
+                    });
+                } else {
+                    document.getElementById(idx.priceEl).textContent = '---';
+                    ['d', 'w', 'm'].forEach(tf => {
+                        document.getElementById(`m_${idx.key}_${tf}`).innerHTML = renderBBBadge(null);
+                    });
+                }
+            });
+
+            document.getElementById('breachSummary').textContent = `${breachCount} / 9 감지`;
+
+            // 3. 관심 종목 테이블 처리
+            const customTbody = document.getElementById('customStockList');
+            customTbody.innerHTML = '';
+
+            if (customTickers.length === 0) {
+                customTbody.innerHTML = `<tr><td colspan="5" class="py-3 text-slate-500">등록된 관심 종목이 없습니다.</td></tr>`;
+            } else {
+                customTickers.forEach(t => {
+                    const data = dataMap[t];
+                    const priceStr = (data && data.price) ? formatPrice(t, data.price) : '---';
+                    const bb = data ? getBBStates(data.closes) : { d: null, w: null };
+
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="py-2 text-left font-semibold text-slate-200">${t}</td>
+                        <td class="py-2 text-right font-mono text-indigo-300">${priceStr}</td>
+                        <td class="py-2">${renderBBBadge(bb.d)}</td>
+                        <td class="py-2">${renderBBBadge(bb.w)}</td>
+                        <td class="py-2 text-right"><button onclick="removeStock('${t}')" class="text-slate-500 hover:text-rose-400 px-1">✕</button></td>
+                    `;
+                    customTbody.appendChild(tr);
+                });
+            }
+
+            analyzeSignal();
+
+            btn.innerHTML = `<span>⚡</span> 전체 고속 갱신`;
+            btn.disabled = false;
+        }
+
+        function addStock() {
+            const input = document.getElementById('newTickerInput');
+            const symbol = input.value.trim().toUpperCase();
+            if (!symbol) return;
+            if (!customTickers.includes(symbol)) {
+                customTickers.push(symbol);
+                localStorage.setItem('my_custom_tickers', JSON.stringify(customTickers));
+                input.value = '';
+                fetchAllData();
+            }
+        }
+
+        function removeStock(symbol) {
+            customTickers = customTickers.filter(t => t !== symbol);
+            localStorage.setItem('my_custom_tickers', JSON.stringify(customTickers));
+            fetchAllData();
+        }
+
+        function analyzeSignal() {
+            const badge = document.getElementById('riskBadge');
+            const guide = document.getElementById('riskGuide');
+            let stockTargetRatio = 70;
+
+            const isVixLow = vixValue <= 14.0;
+
+            if (breachCount >= 4 || (breachCount >= 2 && isVixLow)) {
+                badge.className = "p-3 rounded-lg text-center font-bold text-sm bg-rose-900/90 text-rose-200 border border-rose-600";
+                badge.textContent = "🔴 고점 과열 경보 (주식 매도 추천)";
+                guide.textContent = `BB(1.5σ) 상단 돌파 ${breachCount}개 감지 및 VIX(${vixValue.toFixed(1)}) 과열 상태입니다. 주식을 매도하여 금/현금 비중을 확대하세요.`;
+                stockTargetRatio = 40;
+            } else if (breachCount >= 2 || isVixLow) {
+                badge.className = "p-3 rounded-lg text-center font-bold text-sm bg-amber-900/90 text-amber-200 border border-amber-600";
+                badge.textContent = "🟡 고점 주의 (부분 차익실현 & VIX 과열)";
+                guide.textContent = `VIX(${vixValue.toFixed(1)}) 지수가 14 이하로 낙관론이 팽배하거나 과열 신호가 일부 감지되었습니다. 주식 비중을 일부 축소하세요.`;
+                stockTargetRatio = 55;
+            } else {
+                badge.className = "p-3 rounded-lg text-center font-bold text-sm bg-emerald-900/90 text-emerald-200 border border-emerald-600";
+                badge.textContent = "🟢 정상 구간 (목표 비중 유지)";
+                guide.textContent = `고점 과열 신호가 적습니다. 표준 포트폴리오 비중을 유지하세요.`;
+                stockTargetRatio = 70;
+            }
+
+            const stockAssets = assets.filter(a => a.type === 'stock');
+            const safeAssets = assets.filter(a => a.type === 'safe');
+
+            stockAssets.forEach(a => a.target = stockTargetRatio / stockAssets.length);
+            safeAssets.forEach(a => a.target = (100 - stockTargetRatio) / safeAssets.length);
+
+            renderTable();
+            calculate();
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('assetRows');
+            tbody.innerHTML = '';
+            assets.forEach((asset, idx) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="p-3 font-semibold">${asset.name}</td>
+                    <td class="p-3 text-center"><input type="number" id="c_${idx}" value="${asset.current}" oninput="updateVal()" class="w-10 bg-slate-900 border border-slate-700 rounded text-center"></td>
+                    <td class="p-3 text-center"><input type="number" id="t_${idx}" value="${asset.target.toFixed(0)}" oninput="updateVal()" class="w-10 bg-slate-900 border border-slate-700 rounded text-center text-indigo-300"></td>
+                    <td class="p-3 text-right font-mono" id="amt_${idx}">0</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function updateVal() {
+            assets.forEach((a, i) => {
+                a.current = parseFloat(document.getElementById(`c_${i}`).value) || 0;
+                a.target = parseFloat(document.getElementById(`t_${i}`).value) || 0;
+            });
+            calculate();
+        }
+
+        function calculate() {
+            const total = parseFloat(document.getElementById('totalAmount').value) || 0;
+
+            assets.forEach((a, i) => {
+                const adjRatio = a.target - a.current;
+                const amt = (total * adjRatio) / 100;
+                const amtElem = document.getElementById(`amt_${i}`);
+
+                if (Math.abs(adjRatio) < 0.5) {
+                    amtElem.textContent = "유지";
+                    amtElem.className = "p-3 text-right text-slate-500";
+                } else if (adjRatio > 0) {
+                    amtElem.textContent = `+${Math.round(amt/10000)}만`;
+                    amtElem.className = "p-3 text-right text-emerald-400 font-bold";
+                } else {
+                    amtElem.textContent = `${Math.round(amt/10000)}만`;
+                    amtElem.className = "p-3 text-right text-rose-400 font-bold";
+                }
+            });
+
+            if (currentChart && targetChart) {
+                currentChart.data.datasets[0].data = assets.map(a => a.current);
+                currentChart.update();
+
+                targetChart.data.datasets[0].data = assets.map(a => a.target);
+                targetChart.update();
+            }
+        }
+
+        renderTable();
+        initCharts();
+        calculate();
+    </script>
+</body>
+</html>
